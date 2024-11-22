@@ -21,7 +21,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include <string.h>
+#include "debug.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -60,6 +61,22 @@ static void MX_USART1_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+#define GPS_RX_BUF_SIZE 	  128
+#define MAIN_BUF_SIZE 		  (GPS_RX_BUF_SIZE * 2)
+
+uint8_t g_rxBuf[GPS_RX_BUF_SIZE];
+uint8_t g_gpsMainBuf[MAIN_BUF_SIZE];
+
+// callback is triggered upon buffer size reached or idle event (no data for a period)
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
+  if (huart->Instance == USART1) {
+    memcpy(g_gpsMainBuf, g_rxBuf, Size);
+    DEBUG_LOG("%s\n", g_rxBuf);
+  }
+
+  // Re-start DMA
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart1, g_rxBuf, GPS_RX_BUF_SIZE);
+}
 
 /* USER CODE END 0 */
 
@@ -71,7 +88,7 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-
+  DEBUG_LOG("Initialize Code...!\n");
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -96,7 +113,9 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart1, g_rxBuf, GPS_RX_BUF_SIZE);
+  // Disable interrupt when half the data is transferred
+  __HAL_DMA_DISABLE_IT(&hdma_usart1_rx, DMA_IT_HT);
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -106,6 +125,11 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    HAL_Delay(1000);
+
+    uint8_t message[] = "Bye, World Cuh!\r\n";
+    HAL_UART_Transmit(&huart1, message, sizeof(message) - 1, HAL_MAX_DELAY);
+    DEBUG_LOG("Loop...!\n");
   }
   /* USER CODE END 3 */
 }
