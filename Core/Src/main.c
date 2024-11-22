@@ -90,6 +90,7 @@ int main(void)
 
   /* USER CODE BEGIN 1 */
   DEBUG_LOG("Initialize Code...!\n");
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -121,6 +122,7 @@ int main(void)
   __HAL_DMA_DISABLE_IT(&hdma_usart1_rx, DMA_IT_HT);
   
   // TODO: F9P Config Init
+  F9P_apply_init_config(&huart1);
 
   /* USER CODE END 2 */
 
@@ -131,7 +133,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-    HAL_Delay(1000);
+    HAL_Delay(500);
 
     DEBUG_LOG("Longitude: %.2f \r\n", (float)gps.lon * 1e-7);
     DEBUG_LOG("Latitude: %.2f \r\n", (float)gps.lat * 1e-7);

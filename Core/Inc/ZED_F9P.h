@@ -37,6 +37,8 @@ static const int UBX_FRAME_PAYLOAD_OFFSET = 6;
 // UBX message lengths
 #define UBX_NAV_PVT_LEN 92
 
+#define UBX_CONFIG_LAYER 0x07
+
 /*
  * Structs & Enums
  */
@@ -79,7 +81,7 @@ typedef struct {
  * Functions
  */
 
-void F9P_init(ZedF9P *gps, UART_HandleTypeDef *huart);
+void F9P_apply_init_config(UART_HandleTypeDef *huart);
 void F9P_parse_ubx_message(ZedF9P *gps, uint8_t *buf, int size);
 
 #endif /* INC_ZED_F9P_H_ */

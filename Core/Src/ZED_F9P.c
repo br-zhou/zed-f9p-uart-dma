@@ -14,6 +14,7 @@
 // Function prototypes
 void F9P_parse_ubx_message(ZedF9P *gps, uint8_t *buf, int size);
 int verify_ubx_buffer_checksum(uint8_t *buffer, uint32_t size);
+uint16_t generate_ubx_buffer_checksum(uint8_t *buffer, int start, int end);
 void parse_ubx_buffer(ZedF9P *gps, uint8_t *buf, int size);
 void parse_ubx_buffer(ZedF9P *gps, uint8_t *buf, int size);
 void parse_nav_msg(ZedF9P *gps, uint8_t *buf, int size);
@@ -21,6 +22,9 @@ void parse_nav_pvt_msg(ZedF9P *gps, uint8_t *buf, int size);
 uint32_t extract_uint32(uint8_t *buf, int index);
 uint16_t extract_uint16(uint8_t *buf, int index);
 uint8_t extract_uint8(uint8_t *buf, int index);
+void disable_nmea_uart1(UART_HandleTypeDef *huart);
+void set_custom_polling_rate(UART_HandleTypeDef *huart, uint8_t rate);
+void send_uart_ubx_message(UART_HandleTypeDef *huart, uint8_t *buf, int buffer_size);
 
 void F9P_parse_ubx_message(ZedF9P *gps, uint8_t *buf, int size) {
   if (size < UBX_FRAME_MINIMUM_SIZE) {
@@ -109,18 +113,21 @@ void parse_nav_pvt_msg(ZedF9P *gps, uint8_t *buf, int size) {
 }
 
 int verify_ubx_buffer_checksum(uint8_t *buffer, uint32_t size) {
+  return generate_ubx_buffer_checksum(buffer, 2, size - 2) == extract_uint16(buffer, size - 2);
+}
+
+uint16_t generate_ubx_buffer_checksum(uint8_t *buffer, int start, int end) {
   // Taken from pseudo code found in 3.4 UBX checksum
   // 8-bit Fletcher algorithm
   uint8_t ck_a = 0;
   uint8_t ck_b = 0;
 
-  // skip sync characters, assume last two characters are for checksum
-  for (int i = 2; i < size - 2; i++) {
+  for (int i = start; i < end; i++) {
     ck_a = (ck_a + buffer[i]);
     ck_b = (ck_b + ck_a);
   }
 
-  return buffer[size - 2] == ck_a && buffer[size - 1] == ck_b;
+  return (uint16_t)ck_a | (uint16_t)ck_b << 8;
 }
 
 /**
@@ -147,4 +154,62 @@ uint16_t extract_uint16(uint8_t *buf, int index) {
  */
 uint8_t extract_uint8(uint8_t *buf, int index) {
   return buf[index];
+}
+
+void F9P_apply_init_config(UART_HandleTypeDef *huart) {
+  disable_nmea_uart1(huart);
+  set_custom_polling_rate(huart, 3);
+}
+
+void disable_nmea_uart1(UART_HandleTypeDef *huart) {
+  // Refer to 3.10.26 UBX-CFG-VALSET (0x06 0x8a) and CFG-UART1OUTPROT-NMEA, 0x10740002
+  uint8_t data[] = {
+    F9P_UBX_SYNC_CH_1, F9P_UBX_SYNC_CH_2, // sync chars
+    UBX_CFG_CLASS, // class
+    UBX_CFG_VALSET, // id
+    0x09, 0x00, // length (9 bytes)
+    0x00, UBX_CONFIG_LAYER, 0x00, 0x00, // CFG-VALSET header
+    // configuration data: 
+    0x02, 0x00, 0x74, 0x10, // key id (little endian)
+    0, // (L: single-bit boolean (true = 1, false = 0), stored as U1)
+    0x0, 0x0 // checksum, not set
+  };
+
+  send_uart_ubx_message(huart, data, sizeof(data));
+}
+
+void set_custom_polling_rate(UART_HandleTypeDef *huart, uint8_t rate) {
+  // Refer to 3.10.26 UBX-CFG-VALSET (0x06 0x8a) and CFG-MSGOUT-UBX_NAV_PVT_UART1, 0x20910007
+  uint8_t data[] = {
+    F9P_UBX_SYNC_CH_1, F9P_UBX_SYNC_CH_2, // sync chars
+    UBX_CFG_CLASS, // class
+    UBX_CFG_VALSET, // id
+    0x09, 0x00, // length (9 bytes)
+    0x00, UBX_CONFIG_LAYER, 0x00, 0x00, // CFG-VALSET header
+    // configuration data: 
+    0x07, 0x00, 0x91, 0x20, // key id (little endian)
+    rate, // value (U1)
+    0x0, 0x0 // checksum, not set
+  };
+
+  send_uart_ubx_message(huart, data, sizeof(data));
+}
+
+void send_uart_ubx_message(UART_HandleTypeDef *huart, uint8_t *buf, int buffer_size) {
+  // fill checksum
+  uint16_t checksum = generate_ubx_buffer_checksum(buf, 2, buffer_size - 2);
+  buf[buffer_size - 2] = (uint8_t)(checksum);
+  buf[buffer_size - 1] = (uint8_t)(checksum >> 8);
+
+  #ifdef DEBUG
+    DEBUG_LOG("Buffer as string: ");
+
+    for (int i = 0; i < buffer_size; i++) {
+      DEBUG_LOG("0x%02X ", buf[i]);  // Print each byte in hexadecimal
+    }
+
+    DEBUG_LOG("\r\n");
+  #endif
+
+  HAL_UART_Transmit(huart, buf, buffer_size, HAL_MAX_DELAY);
 }
