@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <string.h>
+#include "ZED_F9P.h"
 #include "debug.h"
 /* USER CODE END Includes */
 
@@ -46,6 +47,7 @@ UART_HandleTypeDef huart2;
 DMA_HandleTypeDef hdma_usart1_rx;
 
 /* USER CODE BEGIN PV */
+ZedF9P gps = {0};
 
 /* USER CODE END PV */
 
@@ -61,21 +63,20 @@ static void MX_USART1_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-#define GPS_RX_BUF_SIZE 	  128
-#define MAIN_BUF_SIZE 		  (GPS_RX_BUF_SIZE * 2)
+#define GPS_RX_BUF_SIZE 	  256
 
-uint8_t g_rxBuf[GPS_RX_BUF_SIZE];
-uint8_t g_gpsMainBuf[MAIN_BUF_SIZE];
+uint8_t g_uart1RxBuf[GPS_RX_BUF_SIZE];
 
 // callback is triggered upon buffer size reached or idle event (no data for a period)
-void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) {
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t size) {
   if (huart->Instance == USART1) {
-    memcpy(g_gpsMainBuf, g_rxBuf, Size);
-    DEBUG_LOG("%s\n", g_rxBuf);
+    // memcpy(g_gpsMainBuf, g_rxBuf, Size);
+    F9P_parse_ubx_message(&gps, g_uart1RxBuf, size);
+    // DEBUG_LOG("%s\n", g_uart1RxBuf);
   }
 
-  // Re-start DMA
-  HAL_UARTEx_ReceiveToIdle_DMA(&huart1, g_rxBuf, GPS_RX_BUF_SIZE);
+  // Re-set DMA interrupt
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart1, g_uart1RxBuf, GPS_RX_BUF_SIZE);
 }
 
 /* USER CODE END 0 */
@@ -113,9 +114,14 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
-  HAL_UARTEx_ReceiveToIdle_DMA(&huart1, g_rxBuf, GPS_RX_BUF_SIZE);
+
+  // Set DMA interrupt
+  HAL_UARTEx_ReceiveToIdle_DMA(&huart1, g_uart1RxBuf, GPS_RX_BUF_SIZE);
   // Disable interrupt when half the data is transferred
   __HAL_DMA_DISABLE_IT(&hdma_usart1_rx, DMA_IT_HT);
+  
+  // TODO: F9P Config Init
+
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -127,9 +133,12 @@ int main(void)
     /* USER CODE BEGIN 3 */
     HAL_Delay(1000);
 
-    uint8_t message[] = "Bye, World Cuh!\r\n";
-    HAL_UART_Transmit(&huart1, message, sizeof(message) - 1, HAL_MAX_DELAY);
-    DEBUG_LOG("Loop...!\n");
+    DEBUG_LOG("Longitude: %.2f \r\n", (float)gps.lon * 1e-7);
+    DEBUG_LOG("Latitude: %.2f \r\n", (float)gps.lat * 1e-7);
+    DEBUG_LOG("velN: %d \r\n", gps.velN);
+    DEBUG_LOG("velE: %d \r\n", gps.velE);
+    DEBUG_LOG("velD: %d \r\n", gps.velD);
+    DEBUG_LOG("hMSL: %d \r\n", gps.hMSL);
   }
   /* USER CODE END 3 */
 }
